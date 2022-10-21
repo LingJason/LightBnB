@@ -1,3 +1,4 @@
+const e = require('express');
 const { Pool, Client } = require('pg')
 const pool = new Pool({
   user: 'vagrant',
@@ -83,7 +84,7 @@ exports.addUser = addUser;
  * @return {Promise<[{}]>} A promise to the reservations.
  */
 const getAllReservations = function (guest_id, limit = 10) {
-  const queries = `SELECT
+  const queryString = `SELECT
   reservations.*,
   properties.*,
   avg(rating) as average_rating
@@ -96,7 +97,7 @@ const getAllReservations = function (guest_id, limit = 10) {
   LIMIT 10;`
 
   return pool
-    .query(queries,[guest_id])
+    .query(queryString, [guest_id])
     .then((result) => {
       return result.rows;
     })
@@ -115,10 +116,88 @@ exports.getAllReservations = getAllReservations;
  * @return {Promise<[{}]>}  A promise to the properties.
  */
 const getAllProperties = function (options, limit = 10) {
+
+  // Setup an array to hold any parameters that may be available for the query
+  const queryParams = [];
+  let hasQueryParams = false;
+  // Start the query with all information that comes before the WHERE clause
+  let queryString = `
+  SELECT properties.*,
+  avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id \n`;
+  console.log("This is the options", options);
+
+  // Check to see if city has been passed
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    queryString += `\n WHERE city LIKE $${queryParams.length}`;
+    hasQueryParams = true;
+  }
+
+  //Check to see if minimum price has been passed
+  if (options.minimum_cost_per_night) {
+    queryParams.push(options.minimum_cost_per_night);
+    if (hasQueryParams) {
+      queryString += ` AND properties.cost_per_night > ($${queryParams.length} * 100)`;
+    }
+    else {
+      queryString += `\n WHERE properties.cost_per_night > ($${queryParams.length} * 100)`;
+      hasQueryParams = true;
+    }
+  };
+
+  //Check to see if maximum price has been passed
+  if (options.maximum_cost_per_night) {
+    queryParams.push(options.maximum_cost_per_night);
+    if (hasQueryParams) {
+      queryString += ` AND properties.cost_per_night < ($${queryParams.length} * 100)`;
+    }
+    else {
+      queryString += `\n WHERE properties.cost_per_night < ($${queryParams.length} * 100)`;
+      hasQueryParams = true;
+    }
+  };
+
+  // Check to see if id has been passed
+  console.log("owner_id", options.owner_id);
+  if (options.owner_id) {
+    queryParams.push(options.owner_id);
+    if (hasQueryParams) {
+      queryString += ` AND properties.id = $${queryParams.length}`;
+    }
+    else {
+      queryString += `\n WHERE properties.id = $${queryParams.length}`;
+      hasQueryParams = true;
+    }
+  };
+  //Check to see if rating has been passed
+  let havingClause = '';
+  if (options.minimum_rating) {
+    queryParams.push(options.minimum_rating);
+    if (hasQueryParams) {
+      havingClause += `\n HAVING avg(property_reviews.rating) >= $${queryParams.length}`;
+    }
+    else {
+      havingClause += `\n HAVING avg(property_reviews.rating) >= $${queryParams.length}`;
+    }
+  };
+
+  // 
+  queryParams.push(limit);
+  queryString += `
+  GROUP BY properties.id
+  ${havingClause}
+  ORDER BY cost_per_night
+  LIMIT $${queryParams.length};
+  `;
+
+
+  console.log(queryString, queryParams);
+
   return pool
-    .query(`SELECT * FROM properties LIMIT $1`, [limit])
+    .query(queryString, queryParams)
     .then((result) => {
-      // console.log(result.rows);
       return result.rows;
     })
     .catch((err) => {
