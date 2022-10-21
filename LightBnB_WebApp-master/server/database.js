@@ -1,3 +1,4 @@
+const { query } = require('express');
 const e = require('express');
 const { Pool, Client } = require('pg')
 const pool = new Pool({
@@ -160,7 +161,6 @@ const getAllProperties = function (options, limit = 10) {
   };
 
   // Check to see if id has been passed
-  console.log("owner_id", options.owner_id);
   if (options.owner_id) {
     queryParams.push(options.owner_id);
     if (hasQueryParams) {
@@ -192,9 +192,6 @@ const getAllProperties = function (options, limit = 10) {
   LIMIT $${queryParams.length};
   `;
 
-
-  console.log(queryString, queryParams);
-
   return pool
     .query(queryString, queryParams)
     .then((result) => {
@@ -213,9 +210,19 @@ exports.getAllProperties = getAllProperties;
  * @return {Promise<{}>} A promise to the property.
  */
 const addProperty = function (property) {
-  const propertyId = Object.keys(properties).length + 1;
-  property.id = propertyId;
-  properties[propertyId] = property;
-  return Promise.resolve(property);
+  const queryString = `INSERT INTO properties (
+    title, description, number_of_bedrooms, number_of_bathrooms, parking_spaces, cost_per_night, thumbnail_photo_url, cover_photo_url, street, country, city, province, post_code, owner_id) 
+    VALUES (${"'" + Object.values(property).join("', '") + "'"}) RETURNING *;`;
+
+  return pool
+    .query(queryString)
+    .then((result) => {
+      return result;
+    })
+    .catch((err) => {
+      console.log(err.message);
+    })
+
+
 }
 exports.addProperty = addProperty;
